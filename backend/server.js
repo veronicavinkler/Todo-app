@@ -1,140 +1,101 @@
 const express = require('express');
 const cors = require('cors');
+const session = require('express-session');
 require('dotenv').config();
-const pool = require('./db');
-const { createTodosTable } = require('./init-db');
+
+// Import configurations
+const sessionConfig = require('./config/session');
+
+// Import utilities
+const { initializeDatabase } = require('./utils/initDatabase');
+
+// Import routes
+const apiRoutes = require('./routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Initialize database on startup
-createTodosTable();
+initializeDatabase().catch(console.error);
 
-// Middleware
+// Session middleware
+app.use(session(sessionConfig));
+
+// CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? [
-        process.env.FRONTEND_URL,
-        /\.vercel\.app$/,
-        /\.netlify\.app$/
-      ]
+    ? [process.env.FRONTEND_URL, /\.vercel\.app$/, /\.netlify\.app$/]
     : 'http://localhost:3000',
   credentials: true
 }));
 
-app.use(express.json());
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check endpoint
-app.get('/api/health', async (req, res) => {
-  try {
-    await pool.query('SELECT NOW()');
-    res.json({ 
-      status: 'OK', 
-      timestamp: new Date().toISOString(),
-      database: 'Connected'
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      status: 'Error', 
-      database: 'Disconnected',
-      error: error.message 
-    });
-  }
-});
-
-// Test endpoint
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'Backend connected successfully!' });
-});
-
-// Get all todos
-app.get('/api/todos', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT * FROM todos ORDER BY created_at DESC'
-    );
-    res.json(rows);
-  } catch (error) {
-    console.error('Error fetching todos:', error);
-    res.status(500).json({ error: 'Failed to fetch todos' });
-  }
-});
-
-// Create new todo
-app.post('/api/todos', async (req, res) => {
-  try {
-    const { text } = req.body;
-    const { rows } = await pool.query(
-      'INSERT INTO todos (text) VALUES ($1) RETURNING *',
-      [text]
-    );
-    res.status(201).json(rows[0]);
-  } catch (error) {
-    console.error('Error creating todo:', error);
-    res.status(500).json({ error: 'Failed to create todo' });
-  }
-});
-
-// Update todo (toggle completion)
-app.put('/api/todos/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { completed } = req.body;
-    const { rows } = await pool.query(
-      'UPDATE todos SET completed = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
-      [completed, id]
-    );
-    
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Todo not found' });
-    }
-    
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error updating todo:', error);
-    res.status(500).json({ error: 'Failed to update todo' });
-  }
-});
-
-// Delete todo
-app.delete('/api/todos/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { rows } = await pool.query(
-      'DELETE FROM todos WHERE id = $1 RETURNING *',
-      [id]
-    );
-    
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Todo not found' });
-    }
-    
-    res.json({ message: 'Todo deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting todo:', error);
-    res.status(500).json({ error: 'Failed to delete todo' });
-  }
-});
+// API routes
+app.use('/api', apiRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'Todo App Backend API with PostgreSQL',
-    version: '2.0.0',
-    database: 'Neon PostgreSQL',
-    endpoints: [
-      'GET /api/health',
-      'GET /api/test', 
-      'GET /api/todos',
-      'POST /api/todos',
-      'PUT /api/todos/:id',
-      'DELETE /api/todos/:id'
-    ]
+    message: 'Todo App Backend API - Organized Structure',
+    version: '3.0.0',
+    database: 'PostgreSQL with User Authentication',
+    features: [
+      'User Registration & Authentication',
+      'Personal Todo Lists',
+      'CRUD Operations',
+      'Input Validation',
+      'Session Management',
+      'Organized Code Structure'
+    ],
+    endpoints: {
+      auth: [
+        'POST /api/auth/register',
+        'POST /api/auth/login',
+        'POST /api/auth/logout',
+        'GET /api/auth/me',
+        'GET /api/auth/profile'
+      ],
+      todos: [
+        'GET /api/todos',
+        'GET /api/todos/stats',
+        'GET /api/todos/:id',
+        'POST /api/todos',
+        'PUT /api/todos/:id',
+        'DELETE /api/todos/:id',
+        'DELETE /api/todos (completed)'
+      ],
+      utility: [
+        'GET /api/health',
+        'GET /api/test'
+      ]
+    }
+  });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    message: `${req.method} ${req.originalUrl} is not a valid endpoint`
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('Database: PostgreSQL via Neon');
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`📚 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🗄️ Database: PostgreSQL via Neon`);
+  console.log(`🏗️ Architecture: Organized MVC Structure`);
+  console.log(`📍 API Documentation: GET /`);
 });
