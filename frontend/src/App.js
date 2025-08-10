@@ -7,6 +7,7 @@ function App() {
   const [todos, setTodos] = useState([]);
   const [newTodo, setNewTodo] = useState('');
   const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+  const [loading, setLoading] = useState(false);
 
   // Test backend connection
   useEffect(() => {
@@ -25,38 +26,55 @@ function App() {
 
   // Fetch todos from backend
   useEffect(() => {
-    const fetchTodos = async () => {
-      try {
-        const response = await axios.get(`${config.apiUrl}/todos`);
-        setTodos(response.data);
-      } catch (error) {
-        console.error('Error fetching todos:', error);
-      }
-    };
-
     fetchTodos();
   }, []);
 
-  const addTodo = () => {
-    if (newTodo.trim()) {
-      const todo = {
-        id: Date.now(),
-        text: newTodo,
-        completed: false
-      };
-      setTodos([...todos, todo]);
-      setNewTodo('');
+  const fetchTodos = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${config.apiUrl}/todos`);
+      setTodos(response.data);
+    } catch (error) {
+      console.error('Error fetching todos:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const toggleTodo = (id) => {
-    setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
+  const addTodo = async () => {
+    if (!newTodo.trim()) return;
+    
+    try {
+      const response = await axios.post(`${config.apiUrl}/todos`, {
+        text: newTodo
+      });
+      setTodos([response.data, ...todos]);
+      setNewTodo('');
+    } catch (error) {
+      console.error('Error adding todo:', error);
+    }
   };
 
-  const deleteTodo = (id) => {
-    setTodos(todos.filter(todo => todo.id !== id));
+  const toggleTodo = async (id, completed) => {
+    try {
+      const response = await axios.put(`${config.apiUrl}/todos/${id}`, {
+        completed: !completed
+      });
+      setTodos(todos.map(todo => 
+        todo.id === id ? response.data : todo
+      ));
+    } catch (error) {
+      console.error('Error updating todo:', error);
+    }
+  };
+
+  const deleteTodo = async (id) => {
+    try {
+      await axios.delete(`${config.apiUrl}/todos/${id}`);
+      setTodos(todos.filter(todo => todo.id !== id));
+    } catch (error) {
+      console.error('Error deleting todo:', error);
+    }
   };
 
   return (
@@ -74,21 +92,27 @@ function App() {
               placeholder="Enter a new todo"
               onKeyPress={(e) => e.key === 'Enter' && addTodo()}
             />
-            <button onClick={addTodo}>Add Todo</button>
+            <button onClick={addTodo} disabled={loading}>
+              {loading ? 'Adding...' : 'Add Todo'}
+            </button>
           </div>
 
           <div className="todo-list">
-            {todos.map(todo => (
-              <div key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => toggleTodo(todo.id)}
-                />
-                <span>{todo.text}</span>
-                <button onClick={() => deleteTodo(todo.id)}>Delete</button>
-              </div>
-            ))}
+            {loading && todos.length === 0 ? (
+              <p>Loading todos...</p>
+            ) : (
+              todos.map(todo => (
+                <div key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={todo.completed}
+                    onChange={() => toggleTodo(todo.id, todo.completed)}
+                  />
+                  <span>{todo.text}</span>
+                  <button onClick={() => deleteTodo(todo.id)}>Delete</button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </header>
